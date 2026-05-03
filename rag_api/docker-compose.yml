@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+
+  python_service:
+    build: ./python_service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./python_service/store:/app/store
+      - ./python_service/chroma_store:/app/chroma_store  # ← add this
+    environment:
+      - OLLAMA_BASE=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  node_backend:
+    build: ./node_backend
+    ports:
+      - "3000:3000"
+    environment:
+      - PYTHON_SERVICE_URL=http://python_service:8000
+      - PORT=3000
+    depends_on:
+      - python_service
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_TARGET=http://node_backend:3000  # ← used inside Docker
+    depends_on:
+      - node_backend
+    restart: unless-stopped

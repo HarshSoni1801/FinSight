@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pdfplumber
+pydantic
+python-multipart
+ftfy
+faiss-cpu
+numpy
+pandas
+scikit-learn
+joblib
+requests
+chromadb
