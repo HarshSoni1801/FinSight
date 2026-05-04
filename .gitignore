@@ -44,7 +44,7 @@ Thumbs.db
 # ========================
 # Databases / Vector stores
 # ========================
-chroma_store/
+# chroma_store/
 store/
 
 # ========================
