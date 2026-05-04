@@ -116,7 +116,7 @@ app.get("/suggestions/:doc_id", async (req, res) => {
 // ─────────────────────────────────────────────
 
 app.post("/ask", async (req, res) => {
-  const { doc_id, question, top_k = 5 } = req.body;
+  const { doc_id, question, top_k = 5,use_suggestion } = req.body;
 
   if (!doc_id || !question) {
     return res.status(400).json({ error: "doc_id and question are required." });
@@ -138,7 +138,7 @@ app.post("/ask", async (req, res) => {
 
 
 app.post("/ask-stream", async (req, res) => {
-  const { doc_id, question, top_k = 5 } = req.body;
+  const { doc_id, question, top_k = 5, use_suggestion } = req.body;
 
   if (!doc_id || !question) {
     return res.status(400).json({ error: "doc_id and question are required." });
@@ -153,7 +153,7 @@ app.post("/ask-stream", async (req, res) => {
 
   try {
     const response = await axios.post(`${PYTHON_URL}/query-stream`, {
-      doc_id, question, top_k
+      doc_id, question, top_k, use_suggestion 
     }, {
       responseType: "stream",
       timeout: 120_000

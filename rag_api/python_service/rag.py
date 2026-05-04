@@ -256,40 +256,6 @@ def batch_embeddings(texts, batch_size=50,totalSize=None):
 
 
 # ─────────────────────────────────────────────
-# FAISS INDEX
-# ─────────────────────────────────────────────
-
-def build_faiss_index(df):
-    #before np.vstack(:  (442,)        → "442 separate things"
-    embeddings = np.vstack(df["embedding"].values)
-    #after np.vstack(:   (442, 2048)   → "a grid with 442 rows and 2048 columns"\
-
-    # Normalize embeddings (important for cosine similarity), Converts each vector → unit vector
-    embeddings = normalize(embeddings)
-    dim = embeddings.shape[1]
-
-     # Create FAISS index (Inner Product) Creates a FAISS index. 
-    #Flat means it stores all vectors as-is (no compression, exact search). IP means Inner Product. 
-    #So: "create an exact inner product search index for dim-dimensional vectors."
-    #Here InnerProduct automatically mean cosine similarity since we make it behave like cosine similarity by normalizing first.
-    index = faiss.IndexFlatIP(dim)
-
-    #Loads all vectors into the index. FAISS requires float32 specifically.
-    index.add(embeddings.astype("float32"))
-    return index, embeddings
-
-
-def search_faiss(query, df, index, top_k=10):
-    print(f"\nQuery: {query}\n")
-    query_embedding = create_embedding([query])[0]
-    query_embedding = normalize([query_embedding]).astype("float32")
-    scores, indices = index.search(query_embedding, top_k)
-    results = df.iloc[indices[0]].copy()
-    results["score"] = scores[0]
-    return results.sort_values(by="score", ascending=False)
-
-
-# ─────────────────────────────────────────────
 # RANKING
 # ─────────────────────────────────────────────
 
@@ -497,30 +463,64 @@ def list_chroma_collections(persist_dir="chroma_store"):
     client = get_chroma_client(persist_dir)
     return [c.name for c in client.list_collections()]
 
-def save_suggestions(doc_id, suggestions, persist_dir="chroma_store"):
-    print('Saving suggestions for doc_id: ',doc_id,' Num suggestions: ',len(suggestions))
-    client = get_chroma_client(persist_dir)
+def save_suggestions_with_embeddings(doc_id, suggestions, persist_dir="chroma_store"):
+    client = get_chroma_client()
     collection = client.get_collection(name=doc_id)
-    # store suggestions as a special chunk with a fixed id
+    
+    # embed each question locally using ollama
+    question_embeddings = []
+    for q in suggestions:
+        emb = create_embedding([q])[0]
+        question_embeddings.append(emb)
+    
+    # store as JSON: list of {question, embedding}
+    data = [
+        {"question": q, "embedding": e}
+        for q, e in zip(suggestions, question_embeddings)
+    ]
+    
     collection.upsert(
         ids=["__suggestions__"],
-        embeddings=[[0.0] * 768],  # dummy embedding — never searched
-        documents=[json.dumps(suggestions)],
+        embeddings=[[0.0] * 768],
+        documents=[json.dumps(data)],  # now stores embeddings too
         metadatas=[{"type": "suggestions", "page_num": 0, "chunk_id": -1}]
     )
-    print(f"Saved {len(suggestions)} suggestions for '{doc_id}'")
+    print(f"Saved {len(suggestions)} suggestions with embeddings for '{doc_id}'")
 
-
-def load_suggestions(doc_id, persist_dir="chroma_store"):
+def load_suggestions_with_embeddings(doc_id):
     try:
-        client = get_chroma_client(persist_dir)
+        print(f"Loading suggestions with embeddings for '{doc_id}'")
+        client = get_chroma_client()
         collection = client.get_collection(name=doc_id)
         result = collection.get(ids=["__suggestions__"])
         if result["documents"]:
             return json.loads(result["documents"][0])
+            # returns: [{"question": "...", "embedding": [...]}, ...]
     except:
         pass
     return []
+
+def search_chroma_with_embedding(query_embedding, doc_id, top_k=10):
+    client = get_chroma_client()
+    collection = client.get_collection(name=doc_id)
+    
+    results = collection.query(
+        query_embeddings=[query_embedding],  # ← use stored embedding directly
+        n_results=top_k,
+        include=["documents", "metadatas", "distances"]
+    )
+    
+    docs = results["documents"][0]
+    metas = results["metadatas"][0]
+    distances = results["distances"][0]
+    
+    df = pd.DataFrame({
+        "text": docs,
+        "page_num": [m["page_num"] for m in metas],
+        "type": [m["type"] for m in metas],
+        "score": [1 - d for d in distances]
+    })
+    return df.sort_values(by="score", ascending=False)
 
 def generate_question_for_chunk(chunk_text):
     prompt = f"""You are analyzing a financial document. Based on the following text, generate exactly ONE specific and interesting question that can be answered from this content.

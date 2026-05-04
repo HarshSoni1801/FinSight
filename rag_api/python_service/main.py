@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from rag import (
     extract_pdf, chunk_text, batch_embeddings,
     apply_better_ranking, build_context, ask_llm, ask_llm_stream,
-    build_chroma_collection, search_chroma, list_chroma_collections, delete_chroma_collection, create_embedding, narrate_table, generate_question_for_chunk, save_suggestions, load_suggestions 
+    build_chroma_collection, search_chroma, list_chroma_collections, delete_chroma_collection, create_embedding, narrate_table, generate_question_for_chunk, save_suggestions_with_embeddings, load_suggestions_with_embeddings,search_chroma_with_embedding
 )
 
 app = FastAPI(title="FinSight", version="1.0.0")
@@ -194,7 +194,7 @@ async def ingest_stream(file: UploadFile = File(...)):
                 if q:
                     suggestions.append(q)
 
-            save_suggestions(doc_id, suggestions)
+            save_suggestions_with_embeddings(doc_id, suggestions)
 
             yield progress("Done!", 100)
             yield f"data: {json.dumps({'type': 'done', 'doc_id': doc_id, 'chunks_created': len(chunks), 'pages_processed': len(pages), 'suggestions':suggestions})}\n\n"
@@ -221,7 +221,7 @@ class QueryRequest(BaseModel):
     doc_id: str
     question: str
     top_k: int = 5
-
+    use_suggestion: bool = False
 
 @app.post("/query")
 def query(req: QueryRequest):
@@ -279,7 +279,22 @@ def query(req: QueryRequest):
 @app.post("/query-stream")
 def query_stream(req: QueryRequest):
     try:
-        results = search_chroma(req.question, req.doc_id, top_k=20)
+        if req.use_suggestion:
+            suggestions_data = load_suggestions_with_embeddings(req.doc_id)
+
+            query_embedding = None
+            for item in suggestions_data:
+                if item["question"] == req.question:
+                    query_embedding = item["embedding"]
+                    break
+
+            if query_embedding is None:
+                raise HTTPException(404, "Suggestion embedding not found")
+            print('question embedding: ', query_embedding)
+            results = search_chroma_with_embedding(query_embedding, req.doc_id, top_k=20)
+
+        else:
+            results = search_chroma(req.question, req.doc_id, top_k=20)
     except Exception as e:
         raise HTTPException(404, f"Document '{req.doc_id}' not found. Ingest it first.")
 
@@ -332,10 +347,15 @@ def query_stream(req: QueryRequest):
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
+
 @app.get("/suggestions/{doc_id}")
 def get_suggestions(doc_id: str):
-    suggestions = load_suggestions(doc_id)
-    return {"suggestions": suggestions}
+    suggestions = load_suggestions_with_embeddings(doc_id)
+    
+    # return only text for frontend
+    questions = [s["question"] for s in suggestions]
+
+    return {"suggestions": questions}
 
 @app.get("/documents")
 def list_documents():

@@ -41,7 +41,7 @@ export default function ChatArea({
 
   function handleSuggestion(s) {
     if (!selectedDoc) return;
-    onAsk(s);
+    onAsk(s, true);
   }
 
   return (

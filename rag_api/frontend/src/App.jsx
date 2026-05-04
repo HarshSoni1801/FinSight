@@ -229,7 +229,7 @@ export default function App() {
     await handleAsk_stream(question);
   }
 
-  async function handleAsk_stream(question) {
+  async function handleAsk_stream(question, useSuggestion = false) {
     if (!question.trim() || !selectedDoc || asking) return;
   
     setAsking(true);
@@ -246,7 +246,7 @@ export default function App() {
       const res = await fetch(`${API}/ask-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doc_id: selectedDoc, question, top_k: 5 }),
+        body: JSON.stringify({ doc_id: selectedDoc, question, top_k: 5,use_suggestion: useSuggestion}),
       });
   
       const reader = res.body.getReader(); //reader — lets you read the response body chunk by chunk as it arrives, instead of waiting for it all
